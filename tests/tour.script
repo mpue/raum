@@ -1,0 +1,56 @@
+# A walk through raum, headless: real programs, real input through the same
+# path as a keyboard and a mouse, a screenshot from raum's own renderer at
+# each step. tests/run.sh runs it; the PNGs land in build/shots/.
+wait 1
+spawn foot
+wait 2
+type echo raum lebt\n
+wait 0.6
+shot 01-arbeit-foot.png
+key super+space
+wait 0.4
+type rech
+wait 0.4
+shot 02-starter.png
+key Return
+wait 2.5
+shot 03-rechner-vorn.png
+pointer 943 271
+press
+release
+wait 1
+shot 04-popup-menue.png
+key Escape
+key super+Tab
+wait 1.2
+shot 05-super-tab.png
+key super+p
+wait 1.5
+shot 06-nebeneinander.png
+key super+p
+key super+p
+spawn gnome-clocks
+wait 2.5
+key super+Up
+wait 2.2
+shot 07-raum-galerie.png
+key super+n
+wait 0.3
+type Projekt X
+key Return
+wait 0.6
+shot 08-leerer-raum.png
+spawn foot
+wait 2
+key super+Up
+key super+Up
+wait 2.4
+shot 09-haus.png
+key super+Down
+key super+Down
+wait 1.5
+key super+h
+wait 0.5
+shot 10-hilfe.png
+key Escape
+quit

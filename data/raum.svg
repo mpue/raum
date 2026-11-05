@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- raum: three windows standing in depth on a floor, the nearest one in use. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0f16"/>
+      <stop offset="0.62" stop-color="#18202c"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </linearGradient>
+    <linearGradient id="axis" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#40b8b0" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#40b8b0" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#sky)"/>
+  <path d="M64 70 L64 118" stroke="url(#axis)" stroke-width="2"/>
+  <path d="M10 118 L56 72 M118 118 L72 72" stroke="#2a3442" stroke-width="1.5"/>
+  <!-- the oldest, furthest back -->
+  <rect x="70" y="44" width="22" height="26" rx="2.5" fill="#8e7dbe" opacity="0.55" transform="skewY(6)"/>
+  <!-- the one before -->
+  <rect x="30" y="40" width="30" height="34" rx="3" fill="#e8a33d" opacity="0.75" transform="skewY(-6)"/>
+  <!-- in use: nearest, square on -->
+  <rect x="40" y="58" width="48" height="40" rx="4" fill="#e9edf2"/>
+  <rect x="40" y="58" width="48" height="8" rx="4" fill="#40b8b0"/>
+  <rect x="46" y="72" width="26" height="3" rx="1.5" fill="#9aa4b1"/>
+  <rect x="46" y="79" width="34" height="3" rx="1.5" fill="#9aa4b1"/>
+  <rect x="46" y="86" width="18" height="3" rx="1.5" fill="#9aa4b1"/>
+</svg>

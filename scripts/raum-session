@@ -1,0 +1,14 @@
+#!/bin/sh
+# Started by GDM as a session of its own (data/raum.desktop). raum takes the
+# screen through DRM/KMS; this only gives it a log and the user's environment.
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/raum"
+mkdir -p "$LOG_DIR"
+[ -f "$LOG_DIR/session.log" ] && mv -f "$LOG_DIR/session.log" "$LOG_DIR/session.log.old"
+export XDG_CURRENT_DESKTOP=raum
+export XDG_SESSION_DESKTOP=raum
+# The NVIDIA driver wants these for GBM-backed compositors.
+if [ -e /proc/driver/nvidia/version ]; then
+    export GBM_BACKEND="${GBM_BACKEND:-nvidia-drm}"
+    export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-nvidia}"
+fi
+exec raum --shared-bus "$@" >"$LOG_DIR/session.log" 2>&1
