@@ -108,6 +108,9 @@ void Apps::scan(const std::string& dir) {
             else if (k == "Exec") app.exec = stripFieldCodes(v);
             else if (k == "TryExec") tryExec = v;
             else if (k == "Icon") app.icon = v;
+            else if (k == "Categories") app.categories = v;
+            else if (k == "Comment" && app.comment.empty()) app.comment = v;
+            else if (k == "Comment[de]") app.comment = v;
             else if (k == "Terminal") app.terminal = v == "true";
             else if ((k == "NoDisplay" || k == "Hidden") && v == "true") hidden = true;
             else if (k == "OnlyShowIn") onlyShowIn = true;

@@ -52,6 +52,7 @@ void State::load() {
         }
     }
     desk.current = std::clamp(j.value("current", 0), 0, static_cast<int>(desk.rooms.size()) - 1);
+    soundOn = j.value("sound", true);
     m_loading = false;
 }
 
@@ -60,6 +61,7 @@ void State::save() {
     const Desk& desk = *m_server.desk;
     json j;
     j["current"] = desk.current;
+    j["sound"] = soundOn;
     j["rooms"] = json::array();
     for (const Room& r : desk.rooms)
         j["rooms"].push_back({{"name", r.name},

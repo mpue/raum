@@ -18,7 +18,9 @@ class HostShortcuts;
 class HostWindow;
 class Hud;
 class Output;
+class Sfx;
 class State;
+class Stages;
 class SurfaceTextures;
 class View;
 class XdgPopup;
@@ -82,8 +84,10 @@ public:
     std::unique_ptr<Hud>             hud;
     std::unique_ptr<Apps>            apps;
     std::unique_ptr<State>           state;
+    std::unique_ptr<Sfx>             sfx;
     std::unique_ptr<HostShortcuts>   hostShortcuts;
     std::unique_ptr<HostWindow>      hostWindow;   // nested on Wayland: raum's own window
+    std::unique_ptr<Stages>          stages;       // clients drawing into a room (Stage.hpp)
     Options options;
 
     std::vector<std::unique_ptr<View>> views;      // mapped or not
@@ -118,6 +122,7 @@ public:
     void takeScreenshot(const std::string& path);   // after the next frame
     // Nested: raum's window between fullscreen and a window.
     void toggleFullscreen();
+    void toggleSound();
     void hostResized(int width, int height);
     void screenshotTaken();
     std::string pendingScreenshot;

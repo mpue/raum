@@ -1,0 +1,28 @@
+# A stage's way, headless: SteelWars (fitzel's player with RAUM_STAGE=1) in a
+# room of its own, leant back into the room and the house and back to work.
+# Needs fitzel's player in build/linux and SteelWars in ~/Documents/steelwars.
+#   tests/run.sh tests/stage.script
+wait 1
+spawn foot
+wait 2
+newroom SteelWars
+wait 0.5
+spawn env RAUM_STAGE=1 $HOME/Documents/devel/fitzel/build/linux/bin/player --play $HOME/Documents/steelwars --scene grenzland --fullscreen 0
+wait 45
+shot stage-01-arbeit.png
+level room
+wait 0.15
+shot stage-02-abflug.png
+wait 3
+shot stage-03-raum.png
+level house
+wait 3
+shot stage-04-haus.png
+level room
+wait 2.5
+level work
+wait 0.25
+shot stage-05-anflug.png
+wait 3
+shot stage-06-zurueck.png
+quit

@@ -1,0 +1,40 @@
+# The ring menu and the HUD: open, search, start, the empty room, help.
+wait 1
+spawn foot
+wait 1.8
+key super+space
+wait 0.12
+shot ring-01-opening.png
+wait 0.5
+shot ring-02-open.png
+key Right
+key Right
+wait 0.4
+shot ring-03-turned.png
+type rech
+wait 0.3
+shot ring-04-search.png
+key Return
+wait 0.2
+shot ring-05-launching.png
+wait 2.5
+shot ring-06-started.png
+key super+n
+wait 0.4
+type Projekt X
+key Return
+wait 0.6
+shot ring-07-empty-room.png
+key super+h
+wait 0.5
+shot ring-08-help.png
+key Escape
+key super+1
+wait 0.2
+shot ring-09-warp.png
+wait 1.2
+key super+Up
+key super+Up
+wait 2.4
+shot ring-10-house.png
+quit

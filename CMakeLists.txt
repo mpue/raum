@@ -75,6 +75,9 @@ raum_protocol("${WP}/unstable/pointer-constraints/pointer-constraints-unstable-v
               pointer-constraints-unstable-v1 server)
 raum_protocol("${WP}/unstable/keyboard-shortcuts-inhibit/keyboard-shortcuts-inhibit-unstable-v1.xml"
               keyboard-shortcuts-inhibit-unstable-v1-client client)
+# raum's own: a client drawing its world into a room (src/Stage.hpp). fitzel's
+# player speaks the other side, from a copy in fitzel/sandbox/protocols.
+raum_protocol("${CMAKE_CURRENT_SOURCE_DIR}/protocols/raum-stage-v1.xml" raum-stage-v1 server)
 # raum's own window on the host desktop (HostWindow) speaks xdg-shell as a
 # client: only the header -- the interface tables are the server's above.
 add_custom_command(OUTPUT "${PROTO_DIR}/xdg-shell-client-protocol.h"
@@ -96,15 +99,20 @@ add_executable(raum
     src/XwaylandView.cpp
     src/Gpu.cpp
     src/SurfaceTextures.cpp
+    src/Stage.cpp
     src/Desk.cpp
     src/DeskRenderer.cpp
     src/Hud.cpp
     src/Apps.cpp
     src/HostShortcuts.cpp
     src/HostWindow.cpp
+    src/Sfx.cpp
+    src/HoloIcons.cpp
+    src/RingMenu.cpp
     src/State.cpp
 )
-target_compile_definitions(raum PRIVATE WLR_USE_UNSTABLE RAUM_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(raum PRIVATE WLR_USE_UNSTABLE RAUM_VERSION="${PROJECT_VERSION}"
+    RAUM_FITZEL_DIR="${FITZEL_DIR}")
 target_include_directories(raum PRIVATE src)
 target_link_libraries(raum PRIVATE
     fitzel

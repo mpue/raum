@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
 #include <glm/glm.hpp>
 
+#include "Stage.hpp"
 #include "View.hpp"
 
 namespace raum {
@@ -84,7 +86,7 @@ public:
     float roomPitch() const;
     const glm::mat4& viewMatrix() const { return m_view; }
     const glm::mat4& projMatrix() const { return m_proj; }
-    glm::vec3 cameraPos() const { return m_camPos; }
+    glm::vec3 cameraPos() const { return m_drawEye; }
     // A world point on the screen (pixels, y down); z < 0 behind the camera.
     glm::vec3 toScreen(const glm::vec3& world) const;
     // The canvas quad's corners (TL, TR, BR, BL) for a pose.
@@ -113,6 +115,36 @@ public:
     double now() const { return m_now; }
     double wallNow() const;
 
+    // --- Effects -----------------------------------------------------------------------
+    // A window that went: its last picture, folding away (DeskRenderer draws and
+    // frees it).
+    struct Ghost {
+        Canvas canvas;
+        Pose pose;
+        wlr_box geometry{};
+        double start = 0.0;
+    };
+    std::vector<Ghost> ghosts;
+    void addGhost(View* view);
+    // A ring of light running out over the floor from a point.
+    struct Wave {
+        glm::vec2 origin{0.0f};   // x, z on the floor
+        double start = -100.0;
+        float strength = 1.0f;
+    };
+    std::array<Wave, 3> waves{};
+    void wave(const glm::vec3& at, float strength = 1.0f);
+    glm::vec3 cameraVelocity() const { return m_camVel; }
+    // Something happened: the slow motion of the hall (stars, the HUD's dials)
+    // runs for a while after, then the picture stands still and costs nothing.
+    void poke() { m_lastActivity = m_now; }
+    bool ambient() const { return m_now - m_lastActivity < 6.0; }
+
+    // --- Stages (Stage.hpp) ---------------------------------------------------------
+    // The stage drawn as its room's diorama this frame -- its picture, set into
+    // the room from the camera it was drawn with -- or null.
+    Stage* diorama() const { return m_diorama; }
+
 private:
     void layout();
     void layoutRoom(int room);
@@ -120,6 +152,34 @@ private:
     Pose exactPose(double x0, double y0, int w, int h, float z) const;
     void cameraTarget(glm::vec3& pos, glm::vec3& look) const;
     void assignSlots(int room, const std::vector<View*>& order);
+
+    // A stage's way between its window and its room's diorama.
+    //   Window:  an ordinary window, drawn from the game's own camera.
+    //   Leaving: the camera is about to lean back. The level waits, and the
+    //            window stays, until the first picture from raum's camera --
+    //            the game's own eye, without its HUD -- has arrived; then the
+    //            camera starts out from exactly there, and the change is not
+    //            seen.
+    //   Diorama: its picture in the room, drawn from raum's camera.
+    //   Landing: back to work: the camera flies into the game's own eye, and
+    //            there the window takes over again.
+    enum class StageMode { Window, Leaving, Diorama, Landing };
+    Stage* stageOf(int room) const;          // the room's stage, its window mapped
+    bool stageInFront() const;               // the current room's, in front at work
+    StageTable tableTarget(int room) const;
+    void updateStage();
+    void askStage();
+    StageMode  m_stageMode = StageMode::Window;
+    Level      m_leaveTo = Level::Room;
+    double     m_leavingSince = 0.0;
+    double     m_landingSince = 0.0;
+    Stage*     m_stage = nullptr;            // the stage this frame looks after
+    int        m_stageRoom = -1;
+    Stage*     m_diorama = nullptr;
+    StageTable m_table;
+    bool       m_tableValid = false;
+    float      m_fov = 32.0f;                // as drawn; the game's own while flying to or from it
+    glm::vec3  m_drawEye{0.0f};              // the eye of the camera drawn with
 
     Server& m_server;
     int   m_w = 1920, m_h = 1080;
@@ -132,6 +192,9 @@ private:
     glm::mat4 m_view{1.0f}, m_proj{1.0f};
     double m_now = 0.0;
     bool  m_animating = true;
+    glm::vec3 m_camVel{0.0f}, m_camPrev{0.0f};
+    double m_lastActivity = 0.0;
+    View* m_lockRoot = nullptr;   // whose brackets locked on last
     std::vector<View*> m_drawList;
 };
 

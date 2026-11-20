@@ -6,11 +6,11 @@ Ein 3D-Desktop für Linux: ein eigener Wayland-Compositor auf
 Firefox, Chrome, foot, über Xwayland auch X11-Programme) laufen darin und
 werden als Texturen im Raum angeordnet.
 
-![Die Galerie eines Raums: das Fenster in Benutzung vorn, dahinter der Verlauf](docs/raum-galerie.png)
+![Das Ring-Menü über dem Raum: Kategorien innen, Programme als Drehscheibe außen](docs/raum-ring.png)
 
-| Nebeneinander | Haus: alle Räume |
+| Die Galerie eines Raums | Haus: alle Räume |
 | --- | --- |
-| ![Zwei Fenster vorn, jedes 1:1](docs/raum-nebeneinander.png) | ![Die Räume als Dioramen](docs/raum-haus.png) |
+| ![Das Fenster in Benutzung vorn, dahinter der Verlauf](docs/raum-galerie.png) | ![Die Räume als Dioramen](docs/raum-haus.png) |
 
 ## Die Idee
 
@@ -34,6 +34,46 @@ willen ist nicht das Ziel.
   Ist er leer, bietet er genau das zum Wiederstarten an.
 - **Nebeneinander** heißt einfach: die zwei (oder drei) zuletzt benutzten
   Fenster vorn, jedes auf seinem festen Platz und in passender Größe.
+
+## Der Look: ein holografisches Cockpit
+
+Tiefes Schwarzblau, Licht in Linien, ernst genug für den Arbeitstag:
+
+- **Der Saal:** ein Sternenhimmel mit Nebel in der Farbe des Raums. Der
+  Horizont ist eine Lichtlinie. Der Boden ist schwarzes Glas unter einem
+  Raster aus leuchtenden Sechsecken und spiegelt die Fenster. Wenn etwas
+  passiert, läuft ein Lichtring über ihn hinweg.
+- **Fenster:** Das Fenster mit dem Fokus tragen Eckklammern, die beim Wechsel
+  von außen heranfliegen und einrasten. Fenster im Hintergrund werden zu
+  Hologrammen, einfarbig mit Scanlinien und leuchtendem Rand. Vorn bleibt
+  jedes Fenster unverfälscht im Maßstab 1:1.
+- **Animationen:** Ein neues Fenster baut sich hinter einer Scan-Linie von oben
+  nach unten auf. Ein geschlossenes faltet sich zu einer Lichtlinie und
+  erlischt. Beim Raumwechsel ziehen Lichtstreifen vorbei, beim Zurücklehnen
+  strahlen sie aus der Mitte. Hinweise schreiben sich von links ein.
+- **Das Menü (Super+Leertaste oder ein Klick auf das Logo):** ein Ring um die
+  Mitte. Innen liegen die Kategorien (*Zuletzt*, *Internet*, *Büro*, *Grafik*,
+  *Medien*, *Entwicklung*, *Spiele*, *System*, *Zubehör*). Außen liegen die
+  Programme in Sechseck-Fassungen als Drehscheibe, das Programm oben ist
+  gewählt. ← → und das Mausrad drehen, ↑ ↓ wechseln die Kategorie, Tippen
+  durchsucht alle Programme, Enter oder ein Klick startet. Im Kern stehen das
+  gewählte Programm groß und die Suche. Darunter liegen raums eigene
+  Aktionen: neuer Raum, Bildschirmfoto, Ton, Hilfe, Beenden.
+- **Die Leiste oben:** das Logo (öffnet das Menü), die Räume als schräge Chips,
+  rechts Prozessor- und Speicher-Anzeige, die Ebene als drei Sechsecke, ein
+  Ton-Schalter und die Uhr mit Sekundenbogen.
+- **Klänge:** leise, kurze Klicks wie Rasterungen und kleine Schalter (30 bis
+  120 ms). Sie werden in raum selbst aus angeschlagenen Resonanzen berechnet,
+  liegen als WAV in `~/.cache/raum/` und laufen über fitzels Audio. Es klickt
+  beim Drehen des Menüs (eine Rasterung pro Schritt), beim Öffnen und
+  Schließen, beim Starten, wenn ein Fenster erscheint oder geht, beim
+  Raumwechsel (die Klicks wandern in Richtung des neuen Raums), beim
+  Zurücklehnen und bei Fehlern. Überfahren, Tippen und Fokuswechsel bleiben
+  still. **Super+M** schaltet alles ab, die Einstellung bleibt gespeichert.
+
+Bewegung im Hintergrund (Sterne, Zeiger) läuft nur ein paar Sekunden nach der
+letzten Eingabe. Danach steht das Bild, und raum zeichnet nur noch einmal pro
+Sekunde für die Uhr.
 
 ## Starten
 
@@ -87,7 +127,7 @@ Super ist die Windows-Taste. **Super+H** zeigt diese Liste auch in raum.
 
 | Taste | |
 | --- | --- |
-| Super + Leertaste | Programm starten, in diesem Raum (Suche nach Name, auch auf Deutsch: „rech“, „uhr“, „dateien“) |
+| Super + Leertaste | das Ring-Menü: Programm starten, in diesem Raum (Suche nach Name, auch auf Deutsch: „rech“, „uhr“, „dateien“) |
 | Super + Enter | Terminal |
 | Super + Tab | das Fenster dahinter nach vorn (noch einmal: weiter zurück in der Zeit) |
 | Super + Umschalt + Tab | das älteste Fenster des Raums nach vorn |
@@ -103,6 +143,7 @@ Super ist die Windows-Taste. **Super+H** zeigt diese Liste auch in raum.
 | Super + Q | Fenster schließen |
 | Super + S | Bildschirmfoto nach `~/Bilder` (aus raums eigenem Renderer) |
 | Super + F11 | verschachtelt: raum im Vollbild / im Fenster |
+| Super + M | Ton an / aus |
 | Super + Umschalt + E | raum beenden |
 
 Mit der Maus:
@@ -116,11 +157,47 @@ Mit der Maus:
 - Super + Ziehen verschiebt ein Fenster in seiner Ebene, Super + rechte
   Taste ändert seine Größe. Titelleisten (Ziehen, Doppelklick zum Maximieren)
   und Ränder zum Größeändern der Programme funktionieren wie gewohnt.
-- Oben: die Räume als Chips (Klick wechselt, Doppelklick benennt um, „+“ macht
-  einen neuen Raum), rechts Ebene und Uhr.
+- Oben: das Logo öffnet das Menü. Die Räume sind Chips: Klick wechselt,
+  Doppelklick benennt um, „+“ macht einen neuen Raum. Rechts sitzt der
+  Ton-Schalter.
+- Im Menü: Klick auf ein Programm startet es, Klick auf eine Kategorie wählt
+  sie, Klick neben den Ring oder die rechte Taste schließt ihn.
 
-Räume, ihre Namen, Farben und was in ihnen gestartet wurde, stehen in
-`~/.config/raum/state.json`.
+Räume, ihre Namen, Farben, was in ihnen gestartet wurde, und ob der Ton an
+ist, stehen in `~/.config/raum/state.json`.
+
+## Bühnen: eine Welt im Raum
+
+Ein Programm kann einem Raum seine Welt geben, zum Beispiel ein Spiel sein
+Schlachtfeld. Bei der Arbeit ist es ein gewöhnliches Fenster im Vollbild,
+1:1. Lehnt sich die Kamera zurück, geht das Fenster weg, und die Welt liegt
+als Diorama auf dem Boden des Raums: im Raum als Tisch mitten im Gang, die
+Galerie der übrigen Fenster links und rechts davon, im Haus als Diorama neben
+den anderen Räumen. Das Programm läuft die ganze Zeit weiter und zeichnet
+seine Welt dabei jedes Bild aus raums Kamera. raum setzt das Bild aus genau
+der Kamera in den Raum, mit der es gezeichnet wurde.
+
+Der Übergang ist ein Flug. Beim Zurücklehnen startet die Kamera im Auge des
+Spiels und steigt von dort über den Tisch. Zurück an die Arbeit fliegt sie
+wieder hinein, und dort übernimmt das Fenster. Dabei ist kein Schnitt zu
+sehen, denn das erste Bild aus raums Kamera ist der Blick des Spiels ohne sein
+HUD.
+
+fitzels Player ist so ein Programm, wenn er mit `RAUM_STAGE=1` gestartet wird,
+also zum Beispiel SteelWars in einem eigenen Raum:
+
+```bash
+RAUM_STAGE=1 ~/Documents/devel/fitzel/build/linux/bin/player --play ~/Documents/steelwars --scene grenzland --fullscreen 0
+```
+
+(aus einem Terminal in raum, oder mit Super+Leertaste). Welches Quadrat seiner
+Welt auf dem Tisch liegt, sagt das Spiel selbst mit
+`game.setStageWorld(x, y, z, kante)`.
+
+Das Protokoll dafür ist raums eigenes, `protocols/raum-stage-v1.xml`: raum
+schickt die Kamera und den Tisch, der Client meldet vor jedem Commit, aus
+welcher Kamera das Bild darin gezeichnet ist. Weil beides über dieselbe
+Verbindung läuft wie die Puffer, passen Kamera und Bild immer zusammen.
 
 ## Bauen
 
@@ -162,8 +239,20 @@ ab. Die Skriptsprache:
 
 `raum --script DATEI` geht auch verschachtelt. Zur Fehlersuche gibt es
 `RAUM_DEBUG=1` (wlroots-Log), `RAUM_DEBUG_CANVAS=1` (Commits und Fensterbilder),
-`RAUM_DEBUG_HUD=1` (Tasten an die Oberfläche) und `RAUM_NO_INHIBIT=1`
-(verschachtelt nicht um die Tastenkürzel bitten).
+`RAUM_DEBUG_HUD=1` (Tasten an die Oberfläche), `RAUM_DEBUG_STAGE=1` (die
+Bühne: Wechsel zwischen Fenster und Diorama, jede Kamera, jedes Bild) und
+`RAUM_NO_INHIBIT=1` (verschachtelt nicht um die Tastenkürzel bitten).
+
+`tests/run.sh tests/ring.script` prüft das Menü und die Oberfläche: Öffnen,
+Drehen, Suchen, Starten, leerer Raum, Hilfe, Warp, Haus.
+`tests/run.sh tests/look.script` prüft den Saal: Materialisieren,
+Eckklammern, Galerie, Haus, ein Fenster, das sich auflöst. Headless ist
+raum stumm. Verschachtelt schaltet `RAUM_MUTE=1` den Ton ab.
+
+`tests/run.sh tests/stage.script` spielt den Weg einer Bühne durch: SteelWars
+in einem eigenen Raum, zurückgelehnt in den Raum und ins Haus und wieder an die
+Arbeit. Dafür braucht es fitzels Player in `build/linux` und SteelWars unter
+`~/Documents/steelwars`.
 
 ## Wie es gebaut ist
 
@@ -181,7 +270,12 @@ fitzel         rhi::Device auf diesem Kontext (createExternalDevice), Shader, Me
 Desk           Räume, Ebenen, Verlauf, Kamera; Pixel ↔ Fensterpixel (Picking)
 DeskRenderer   Himmel, Boden (Raster, Zeitachse, weiche Schatten), Spiegelung,
                je Fenster ein Bild aus allen seinen Oberflächen (Popups, Subsurfaces)
-Hud            Leiste, Titel und Zeiten, Starter, Hilfe, Hinweise (ImGui)
+Hud            Leiste, Titel und Zeiten, Karten, Hinweise, Warp-Streifen (ImGui)
+RingMenu       das Menü: Kategorien, Drehscheibe, Suche, Aktionen
+HoloIcons      raums eigene Linien-Icons, Rahmen, gesperrte Schrift
+Sfx            die Klänge: synthetisiert, als WAV zwischengespeichert, über fitzels Audio
+Theme.hpp      Farben und Animationskurven an einer Stelle
+Stage          Bühnen (raum-stage-v1): Kamera hin, Bild und seine Kamera zurück
 ```
 
 Ein paar Entscheidungen dahinter:
@@ -220,6 +314,12 @@ CMake von fitzel:
 - Das Versions-Stamping in fitzels `CMakeLists.txt` benutzt
   `CMAKE_CURRENT_SOURCE_DIR`, damit fitzel als Unterprojekt baut.
 
+Für die Bühnen kam dazu, im Player (`sandbox/src/RaumStage.*`): die andere
+Seite des Protokolls auf GLFWs Wayland-Verbindung, ein Fenster mit Alphakanal
+(`WindowConfig::transparent`), raums Kamera kurz vor dem Zeichnen, ein Schritt
+am Ende, der alles außerhalb des Quadrats durchsichtig macht, kein HUD im
+Diorama, und `game.setStageWorld`.
+
 ## Grenzen dieses ersten Stands
 
 - Nur **ein Bildschirm**. Weitere Ausgaben bleiben in einer Sitzung dunkel.
@@ -230,6 +330,10 @@ CMake von fitzel:
   serverseitige Dekorationen kennen, haben in raum keine.
 - Xwayland deckt die Grundlagen ab: Fenster, Menüs (override-redirect),
   Fokus, Größe. Ziehen per X11-Titelleiste fehlt noch.
+- Bühnen: eine zur Zeit (die des aktuellen Raums, sonst die erste). Ins
+  Diorama selbst geht noch keine Eingabe, und Fenster und Welt verdecken
+  einander nicht nach Tiefe: Die Fenster stehen immer vor ihr. Das Spiel
+  läuft nur, solange raum Bilder zeichnet und ihm Frame-Callbacks schickt.
 - Fensterinhalt und Oberfläche sind getestet, headless und verschachtelt,
   mit foot, GTK4-Programmen und glxgears über Xwayland. Tasten und Klicks
   kamen dabei aus Skripten über denselben Eingabeweg wie echte Geräte. Von

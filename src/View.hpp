@@ -90,6 +90,8 @@ public:
     Pose   target;                 // where it is heading
     bool   poseValid = false;      // false until the first layout
     float  appear = 0.0f;          // 0 -> 1 as it fades in after mapping
+    double mappedAt = -1.0;        // when it appeared (Desk::now): the materialize runs from it
+    double focusedAt = -1.0;       // when it got the focus: the brackets lock on from it
     Canvas canvas;
 
     int screenX() const { return m_screenX; }

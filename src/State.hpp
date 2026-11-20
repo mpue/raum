@@ -17,6 +17,7 @@ public:
     void load();
     void save();
     const std::string& path() const { return m_path; }
+    bool soundOn = true;   // raum's own sounds (Super+M)
 
 private:
     Server& m_server;

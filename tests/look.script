@@ -1,0 +1,27 @@
+# The look, step by step: windows appearing, the focus brackets, the gallery.
+wait 1
+spawn foot
+wait 0.25
+shot look-01-materialize.png
+wait 1.5
+spawn gnome-calculator
+wait 2.2
+shot look-02-work.png
+key super+Tab
+wait 0.12
+shot look-03-lockon.png
+wait 1.2
+key super+Up
+wait 2.3
+shot look-04-room.png
+key super+Up
+wait 2.3
+shot look-05-house.png
+key super+Down
+key super+Down
+wait 1.5
+key super+q
+wait 0.15
+shot look-06-ghost.png
+wait 1
+quit

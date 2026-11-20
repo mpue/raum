@@ -17,6 +17,8 @@ struct App {
     std::string keywords;    // Keywords, for searching
     std::string exec;        // the command line, field codes removed
     std::string icon;        // Icon=
+    std::string categories;  // Categories=, ;-separated
+    std::string comment;     // Comment[de] where there is one
     bool terminal = false;
     std::shared_ptr<fitzel::Texture> texture;   // loaded on first use
     bool textureTried = false;

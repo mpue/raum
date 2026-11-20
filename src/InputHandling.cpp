@@ -16,6 +16,7 @@
 #include "Desk.hpp"
 #include "Hud.hpp"
 #include "Server.hpp"
+#include "Sfx.hpp"
 #include "State.hpp"
 #include "View.hpp"
 
@@ -120,6 +121,9 @@ bool Server::handleBinding(xkb_keysym_t sym, std::uint32_t mods) {
         case XKB_KEY_w:
             if (f) f->close();
             return true;
+        case XKB_KEY_m:
+            toggleSound();
+            return true;
         case XKB_KEY_F11:
             toggleFullscreen();
             return true;
@@ -134,6 +138,7 @@ bool Server::handleBinding(xkb_keysym_t sym, std::uint32_t mods) {
             char name[64];
             std::strftime(name, sizeof(name), "/raum-%Y%m%d-%H%M%S.png", &lt);
             takeScreenshot(picturesDir() + name);
+            sfx->play(Sfx::Shutter);
             hud->toast("Bildschirmfoto gespeichert");
             return true;
         }

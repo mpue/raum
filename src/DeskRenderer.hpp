@@ -8,10 +8,11 @@
 #include <fitzel/graphics/Shader.hpp>
 #include <fitzel/rhi/Types.hpp>
 
+#include "View.hpp"
+
 namespace raum {
 
 class Server;
-class View;
 
 // Draws the desk with fitzel: the hall (sky, floor with its grid, soft shadows
 // and a faint reflection), every window as a textured quad, then hands the
@@ -40,12 +41,16 @@ private:
     void drawSky();
     void drawFloor(bool reflectionPass);
     void drawWindows(bool reflection);
-    void drawFrame(View* view, float alpha);
+    void drawStage();
+    void drawGhosts();
+    void drawFrame(const Pose& pose, const wlr_box& geometry, const glm::vec3& color, float strength,
+                   float brackets, float lock);
 
     Server& m_server;
     std::unique_ptr<fitzel::RenderTarget> m_scene;
     int m_w = 0, m_h = 0;
     fitzel::Shader m_skyShader, m_floorShader, m_windowShader, m_surfaceShader, m_glowShader;
+    fitzel::Shader m_stageShader;
     fitzel::Mesh m_quad;   // unit quad, corners at 0..1
 };
 

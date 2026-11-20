@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Hud.hpp"
+#include "Sfx.hpp"
 #include "Server.hpp"
 #include "State.hpp"
 
@@ -61,7 +64,7 @@ double Desk::wallNow() const {
 
 int Desk::topBar() const {
     if (View* f = m_server.focused(); f && f->fullscreen && level == Level::Work) return 0;
-    return 34;
+    return 40;
 }
 
 float Desk::floorY() const { return -m_h * 0.5f - 70.0f; }
@@ -93,6 +96,10 @@ View* Desk::mostRecent(int room, const View* except) const {
 void Desk::goToRoom(int index) {
     index = std::clamp(index, 0, static_cast<int>(rooms.size()) - 1);
     const bool changed = index != current;
+    if (changed) {
+        m_server.sfx->play(index > current ? Sfx::WhooshRight : Sfx::WhooshLeft);
+        wave(glm::vec3(roomX(index), floorY(), -300.0f), 1.2f);
+    }
     current = index;
     m_dollyTarget = 0.0f;
     m_animating = true;
@@ -108,6 +115,7 @@ void Desk::goToRoom(int index) {
 void Desk::stepRoom(int dir) {
     const int next = current + dir;
     if (next < 0 || next >= static_cast<int>(rooms.size())) {
+        m_server.sfx->play(Sfx::Error);
         m_server.hud->toast(dir > 0 ? "Letzter Raum -- Super+N macht einen neuen"
                                     : "Erster Raum");
         return;
@@ -135,6 +143,7 @@ void Desk::deleteRoomIfEmpty(int index) {
     if (rooms.size() <= 1 || index < 0 || index >= static_cast<int>(rooms.size())) return;
     for (const auto& v : m_server.views)
         if (v->mapped() && v->room == index) {
+            m_server.sfx->play(Sfx::Error);
             m_server.hud->toast("Nur leere Räume lassen sich entfernen");
             return;
         }
@@ -171,10 +180,27 @@ void Desk::moveViewToRoom(View* view, int room, bool follow) {
 }
 
 void Desk::setLevel(Level l) {
+    if (m_stageMode == StageMode::Leaving) {
+        // The game's window has not gone yet: back to work keeps it, any
+        // other level is where the camera goes once it has.
+        if (l == Level::Work) m_stageMode = StageMode::Window;
+        else m_leaveTo = l;
+        return;
+    }
     if (l == level) return;
+    if (level == Level::Work && stageInFront()) {
+        m_stageMode = StageMode::Leaving;
+        m_leaveTo = l;
+        m_leavingSince = m_now;
+        m_animating = true;
+        m_server.scheduleFrame();
+        return;
+    }
+    m_server.sfx->play(l > level ? Sfx::ZoomOut : Sfx::ZoomIn);
     level = l;
     m_dollyTarget = 0.0f;
     m_animating = true;
+    poke();
     m_server.scheduleFrame();
 }
 
@@ -212,6 +238,130 @@ void Desk::setSplit(int n) {
     m_server.scheduleFrame();
 }
 
+// --- Stages ----------------------------------------------------------------------------
+
+Stage* Desk::stageOf(int room) const {
+    if (!m_server.stages) return nullptr;
+    for (const auto& v : m_server.views)
+        if (v->mapped() && v->room == room && !v->parentView())
+            if (Stage* s = m_server.stages->ofView(v.get())) return s;
+    return nullptr;
+}
+
+bool Desk::stageInFront() const {
+    Stage* s = stageOf(current);
+    if (!s || !s->ownKnown) return false;
+    View* f = m_server.focused();
+    while (f && f->parentView()) f = f->parentView();
+    return f && f == s->view() && f->slot >= 0;
+}
+
+// The table a stage's world lies on: down the room's aisle, in front of the
+// gallery; in the house, the size of the room's diorama.
+StageTable Desk::tableTarget(int room) const {
+    StageTable t;
+    const float rx = roomX(room);
+    if (level == Level::House) {
+        t.width = roomPitch() * 0.62f;
+        t.centre = glm::vec3(rx, floorY(), -t.width * 0.45f);
+    } else {
+        t.width = m_w * 1.35f;
+        t.centre = glm::vec3(rx, floorY(), -m_w * 0.85f);
+    }
+    return t;
+}
+
+namespace {
+const char* stageModeName(int m) {
+    static const char* names[] = {"Fenster", "Abflug", "Diorama", "Anflug"};
+    return names[m & 3];
+}
+} // namespace
+
+void Desk::updateStage() {
+    static const bool debug = std::getenv("RAUM_DEBUG_STAGE") != nullptr;
+    const StageMode before = m_stageMode;
+    struct Report {
+        const Desk& d; StageMode before; bool on;
+        ~Report() {
+            if (on && d.m_stageMode != before)
+                std::fprintf(stderr, "[stage] %s -> %s (level %d, room %d)\n", stageModeName(static_cast<int>(before)),
+                             stageModeName(static_cast<int>(d.m_stageMode)), static_cast<int>(d.level), d.current);
+        }
+    } report{*this, before, debug};
+    // One stage at a time: the current room's, else the first there is.
+    m_stage = stageOf(current);
+    m_stageRoom = m_stage ? current : -1;
+    for (int r = 0; !m_stage && r < static_cast<int>(rooms.size()); ++r)
+        if ((m_stage = stageOf(r))) m_stageRoom = r;
+    if (!m_stage) {
+        m_stageMode = StageMode::Window;
+        m_diorama = nullptr;
+        return;
+    }
+    if (View* v = m_stage->view(); v && !v->fullscreen) v->setFullscreen(true);
+    const bool atWorkHere = level == Level::Work && current == m_stageRoom;
+    const bool seen = level == Level::House || (level == Level::Room && current == m_stageRoom);
+    switch (m_stageMode) {
+        case StageMode::Window:
+            if (seen) m_stageMode = StageMode::Diorama;
+            break;
+        case StageMode::Leaving:
+            if (current != m_stageRoom || level != Level::Work) {
+                m_stageMode = seen ? StageMode::Diorama : StageMode::Window;
+            } else if ((m_stage->shownSerial != 0 && m_stage->shownKnown) ||
+                       m_now - m_leavingSince > 0.6) {
+                // The picture from the game's own eye is here: lean back from
+                // exactly there.
+                m_stageMode = StageMode::Diorama;
+                level = m_leaveTo;
+                m_dollyTarget = 0.0f;
+                const StageCamera& o = m_stage->ownCam;
+                m_camPos = o.eye;
+                m_camLook = o.eye + o.front * 1000.0f;
+                m_fov = o.fov;
+            }
+            break;
+        case StageMode::Diorama: {
+            View* f = m_server.focused();
+            while (f && f->parentView()) f = f->parentView();
+            if (atWorkHere) {
+                m_stageMode = (m_stage->ownKnown && f == m_stage->view()) ? StageMode::Landing
+                                                                          : StageMode::Window;
+                m_landingSince = m_now;
+            }
+            else if (!seen)
+                m_stageMode = StageMode::Window;
+            break;
+        }
+        case StageMode::Landing:
+            if (!atWorkHere) m_stageMode = seen ? StageMode::Diorama : StageMode::Window;
+            break;   // arriving is the camera's business (update)
+    }
+    m_diorama = (m_stageMode == StageMode::Diorama || m_stageMode == StageMode::Landing) ? m_stage
+                                                                                         : nullptr;
+}
+
+void Desk::askStage() {
+    if (!m_stage) return;
+    StageCamera cam;
+    bool own = m_stageMode == StageMode::Window;
+    if (m_stageMode == StageMode::Leaving) {
+        cam = m_stage->ownCam;   // its own eye, from our side: the same picture without the HUD
+    } else {
+        cam.eye = m_camPos;
+        cam.front = glm::normalize(m_camLook - m_camPos);
+        const glm::vec3 right = glm::normalize(glm::cross(cam.front, glm::vec3(0.0f, 1.0f, 0.0f)));
+        cam.up = glm::normalize(glm::cross(right, cam.front));
+        cam.fov = m_fov;
+    }
+    static const bool debug = std::getenv("RAUM_DEBUG_STAGE") != nullptr;
+    if (debug)
+        std::fprintf(stderr, "[stage] ask %s eye %.0f,%.0f,%.0f fov %.1f\n", own ? "own" : "raum", cam.eye.x,
+                     cam.eye.y, cam.eye.z, cam.fov);
+    m_stage->ask(own, cam, m_table);
+}
+
 // --- Told by the server -------------------------------------------------------------
 
 void Desk::viewMapped(View* view) {
@@ -221,10 +371,14 @@ void Desk::viewMapped(View* view) {
     view->lastFocusWall = wallNow();
     view->poseValid = false;
     view->appear = 0.0f;
+    view->mappedAt = m_server.now();
+    poke();
+    wave(glm::vec3(roomX(view->room), floorY(), -200.0f), 0.8f);
     m_animating = true;
 }
 
 void Desk::viewUnmapped(View* view) {
+    if (m_lockRoot == view) m_lockRoot = nullptr;
     if (hovered == view) hovered = nullptr;
     if (dragging == view) dragging = nullptr;
     view->slot = -1;
@@ -237,12 +391,44 @@ void Desk::focused(View* view) {
     while (View* p = root->parentView()) root = p;
     root->lastFocus = view->lastFocus = m_server.now();
     root->lastFocusWall = view->lastFocusWall = wallNow();
+    if (root != m_lockRoot) {
+        // Another window: the brackets come in and lock on to it.
+        m_lockRoot = root;
+        root->focusedAt = m_server.now();
+    }
     if (root->room != current) {
+        m_server.sfx->play(root->room > current ? Sfx::WhooshRight : Sfx::WhooshLeft);
         current = root->room;
         m_dollyTarget = 0.0f;
         m_server.hud->toast(rooms[current].name);
         m_server.state->save();
     }
+    m_animating = true;
+}
+
+// --- Effects -------------------------------------------------------------------------
+
+void Desk::addGhost(View* view) {
+    if (!view->canvas.valid() || !view->poseValid || view->pose.alpha < 0.05f) return;
+    Ghost g;
+    g.canvas = view->canvas;
+    g.pose = view->pose;
+    g.geometry = view->geometry();
+    g.start = m_server.now();
+    view->canvas = Canvas{};   // the ghost owns the picture now
+    ghosts.push_back(g);
+    poke();
+    m_animating = true;
+}
+
+void Desk::wave(const glm::vec3& at, float strength) {
+    // The oldest ring makes way.
+    Wave* slot = &waves[0];
+    for (Wave& w : waves)
+        if (w.start < slot->start) slot = &w;
+    slot->origin = glm::vec2(at.x, at.z);
+    slot->start = m_server.now();
+    slot->strength = strength;
     m_animating = true;
 }
 
@@ -287,6 +473,20 @@ void Desk::assignSlots(int room, const std::vector<View*>& order) {
 
 void Desk::layoutRoom(int r) {
     std::vector<View*> order = history(r);
+    // A stage drawn as the room's diorama is no window meanwhile: its picture is
+    // the room's floor (DeskRenderer::drawStage).
+    if (View* staged = (m_diorama && m_stageRoom == r) ? m_diorama->view() : nullptr) {
+        order.erase(std::remove(order.begin(), order.end(), staged), order.end());
+        staged->target.alpha = 0.0f;
+        staged->pose.alpha = 0.0f;
+        staged->slot = -1;
+        // Flying into the game's eye: what is about to fill the screen is the
+        // game, nothing of the room's in front of it.
+        if (m_stageMode == StageMode::Landing) {
+            for (View* v : order) v->target.alpha = 0.0f;
+            return;
+        }
+    }
     if (order.empty()) return;
     Room& room = rooms[static_cast<std::size_t>(r)];
     const int n = std::min<int>(room.split, static_cast<int>(order.size()));
@@ -391,6 +591,8 @@ void Desk::layoutRoom(int r) {
         // behind.
         float z = 0.0f;
         double prevWall = order[0]->lastFocusWall;
+        // With a stage's world on the floor, the gallery stands either side of it.
+        const float aisle = stageOf(r) ? tableTarget(r).width * 0.5f + 60.0f : 0.0f;
         for (std::size_t k = 0; k < order.size(); ++k) {
             View* v = order[k];
             const wlr_box g = v->geometry();
@@ -407,7 +609,7 @@ void Desk::layoutRoom(int r) {
             // still show past the ones in front.
             const float spread = 110.0f * static_cast<float>(k / 2);
             Pose p;
-            p.center = glm::vec3(rx + side * (280.0f + spread + gw * sc * 0.5f * std::cos(yaw)),
+            p.center = glm::vec3(rx + side * (280.0f + aisle + spread + gw * sc * 0.5f * std::cos(yaw)),
                                  floorY() + gh * sc * 0.5f + 30.0f, z - gw * sc * 0.5f * std::sin(0.36f));
             p.scale = sc;
             p.yaw = yaw;
@@ -476,6 +678,20 @@ void Desk::layout() {
 
 void Desk::cameraTarget(glm::vec3& pos, glm::vec3& look) const {
     const float rx = roomX(current);
+    if (m_stage && m_stageMode == StageMode::Landing) {
+        // Into the game's own eye.
+        pos = m_stage->ownCam.eye;
+        look = pos + m_stage->ownCam.front * 1000.0f;
+        return;
+    }
+    if (level == Level::Room && stageOf(current)) {
+        // Over the table, as at a map: higher than the gallery's eye, looking
+        // down onto the world rather than along the aisle.
+        const StageTable t = tableTarget(current);
+        pos = glm::vec3(rx, floorY() + m_h * 1.75f, m_D - 200.0f - m_dolly);
+        look = glm::vec3(rx, floorY(), t.centre.z - m_dolly);
+        return;
+    }
     switch (level) {
         case Level::Work:
             pos = glm::vec3(rx, 0.0f, m_D);
@@ -513,6 +729,7 @@ void Desk::update(double now, double dt, int width, int height) {
 
     m_dolly = approach(m_dolly, m_dollyTarget, kc);
     if (std::abs(m_dolly - m_dollyTarget) < 0.5f) m_dolly = m_dollyTarget;
+    updateStage();
     layout();
 
     bool moving = std::abs(m_dolly - m_dollyTarget) > 0.0f;
@@ -524,12 +741,54 @@ void Desk::update(double now, double dt, int width, int height) {
     }
     m_camPos = approach(m_camPos, m_camPosTarget, kc);
     m_camLook = approach(m_camLook, m_camLookTarget, kc);
-    if (glm::length(m_camPos - m_camPosTarget) < 0.02f && glm::length(m_camLook - m_camLookTarget) < 0.02f) {
+    // The lens: raum's own, except on the way into the game's eye.
+    const float fovTarget = (m_stage && m_stageMode == StageMode::Landing) ? m_stage->ownCam.fov : m_fovY;
+    m_fov = approach(m_fov, fovTarget, kc);
+    if (glm::length(m_camPos - m_camPosTarget) < 0.02f && glm::length(m_camLook - m_camLookTarget) < 0.02f &&
+        std::abs(m_fov - fovTarget) < 0.01f) {
         m_camPos = m_camPosTarget;
         m_camLook = m_camLookTarget;
+        m_fov = fovTarget;
     } else {
         moving = true;
     }
+    if (m_stage && m_stageMode == StageMode::Landing) {
+        // In the game's eye (near enough to see no difference): the window again,
+        // at work's own camera -- the same picture, from then on with its HUD.
+        // The eye it flies to keeps moving (the game's camera does not stop for
+        // us): near is near enough, and after a while it is there anyway.
+        const float dirGap = glm::length(glm::normalize(m_camLook - m_camPos) - m_stage->ownCam.front);
+        const bool arrived = glm::length(m_camPos - m_camPosTarget) < 6.0f && dirGap < 0.01f &&
+                             std::abs(m_fov - fovTarget) < 0.3f;
+        if (arrived || m_now - m_landingSince > 2.0) {
+            m_stageMode = StageMode::Window;
+            m_diorama = nullptr;
+            layout();
+            cameraTarget(m_camPosTarget, m_camLookTarget);
+            m_camPos = m_camPosTarget;
+            m_camLook = m_camLookTarget;
+            m_fov = m_fovY;
+            if (View* v = m_stage->view()) {
+                v->pose = v->target;
+                v->appear = 1.0f;
+            }
+        }
+        moving = true;
+    }
+    if (m_stage) {
+        const StageTable t = tableTarget(m_stageRoom);
+        if (!m_tableValid) {
+            m_table = t;
+            m_tableValid = true;
+        }
+        m_table.centre = approach(m_table.centre, t.centre, kc);
+        m_table.width = approach(m_table.width, t.width, kc);
+        if (glm::length(m_table.centre - t.centre) < 0.02f && std::abs(m_table.width - t.width) < 0.02f)
+            m_table = t;
+        else
+            moving = true;
+    }
+    if (m_stageMode == StageMode::Leaving) moving = true;
 
     for (const auto& up : m_server.views) {
         View* v = up.get();
@@ -537,8 +796,7 @@ void Desk::update(double now, double dt, int width, int height) {
         if (!v->poseValid) {
             // New windows rise out of the depth into place.
             v->pose = v->target;
-            v->pose.center.z -= 260.0f;
-            v->pose.alpha = 0.0f;
+            v->pose.center.z -= 120.0f;
             v->poseValid = true;
         }
         Pose& p = v->pose;
@@ -551,11 +809,32 @@ void Desk::update(double now, double dt, int width, int height) {
         if (settled(p, t)) p = t;
         else moving = true;
     }
+    // What the effects need: the camera's speed (the warp streaks), and
+    // whatever is still running.
+    const glm::vec3 camNow = m_camPos;
+    if (dt > 1e-4) m_camVel = (camNow - m_camPrev) / static_cast<float>(dt);
+    m_camPrev = camNow;
+    if (!ghosts.empty() || ambient()) moving = true;
+    for (const Wave& w : waves)
+        if (now - w.start < 2.6) moving = true;
+    for (const auto& up : m_server.views)
+        if (up->mapped() && (now - up->mappedAt < 0.7 || now - up->focusedAt < 0.6)) moving = true;
     m_animating = moving;
 
     const float aspect = static_cast<float>(m_w) / static_cast<float>(m_h);
-    m_view = glm::lookAt(m_camPos, m_camLook, glm::vec3(0.0f, 1.0f, 0.0f));
-    m_proj = glm::perspective(glm::radians(m_fovY), aspect, 20.0f, 400000.0f);
+    // A diorama in the room: everything is drawn from the camera its picture
+    // was drawn from (a frame or two behind the one asked for), so the room and
+    // the world on its floor stay in one piece while the camera moves.
+    if (m_diorama && m_diorama->shownSerial != 0 && m_diorama->shownKnown) {
+        const StageCamera& c = m_diorama->shownCam;
+        m_drawEye = c.eye;
+        m_view = glm::lookAt(c.eye, c.eye + c.front, c.up);
+        m_proj = glm::perspective(glm::radians(c.fov), aspect, 20.0f, 400000.0f);
+    } else {
+        m_drawEye = m_camPos;
+        m_view = glm::lookAt(m_camPos, m_camLook, glm::vec3(0.0f, 1.0f, 0.0f));
+        m_proj = glm::perspective(glm::radians(m_fov), aspect, 20.0f, 400000.0f);
+    }
 
     // What to draw, back to front: everything that is on the screen at all.
     m_drawList.clear();
@@ -578,13 +857,16 @@ void Desk::update(double now, double dt, int width, int height) {
         if (behind || left || right || above || below) continue;
         m_drawList.push_back(v);
     }
-    const glm::vec3 eye = m_camPos;
+    const glm::vec3 eye = m_drawEye;
     std::stable_sort(m_drawList.begin(), m_drawList.end(), [&](View* a, View* b) {
         const float da = glm::dot(a->pose.center - eye, a->pose.center - eye);
         const float db = glm::dot(b->pose.center - eye, b->pose.center - eye);
         if (std::abs(da - db) > 1.0f) return da > db;
         return a->pose.center.z < b->pose.center.z;
     });
+
+    // The stage hears where to draw from next.
+    askStage();
 }
 
 // --- Geometry ------------------------------------------------------------------------

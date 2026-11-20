@@ -26,6 +26,8 @@ extern "C" {
 #include "HostWindow.hpp"
 #include "Hud.hpp"
 #include "Output.hpp"
+#include "Sfx.hpp"
+#include "Stage.hpp"
 #include "State.hpp"
 #include "SurfaceTextures.hpp"
 #include "View.hpp"
@@ -154,6 +156,7 @@ Server::Server(const Options& opts) : options(opts) {
     // itself (SurfaceTextures), in its own context.
     compositor = wlr_compositor_create(display, 6, nullptr);
     wlr_subcompositor_create(display);
+    stages = std::make_unique<Stages>(*this);
     wlr_data_device_manager_create(display);
     wlr_primary_selection_v1_device_manager_create(display);
     wlr_data_control_manager_v1_create(display);
@@ -178,6 +181,14 @@ Server::Server(const Options& opts) : options(opts) {
     desk = std::make_unique<Desk>(*this);
     state = std::make_unique<State>(*this);
     state->load();
+    {
+        // Sounds go out through the machine's speakers -- never from a headless
+        // run (tests), which nobody is listening to.
+        wlr_backend* hl = nullptr;
+        if (wlr_backend_is_multi(backend)) wlr_multi_for_each_backend(backend, findHeadless, &hl);
+        else if (wlr_backend_is_headless(backend)) hl = backend;
+        sfx = std::make_unique<Sfx>(hl == nullptr, !state->soundOn);
+    }
     apps = std::make_unique<Apps>();
     deskRenderer = std::make_unique<DeskRenderer>(*this);
     hud = std::make_unique<Hud>(*this);
@@ -212,6 +223,7 @@ Server::~Server() {
                                 &m_newXwaylandSurface, &m_xwaylandReady})
         l->disconnect();
     if (xwayland) wlr_xwayland_destroy(xwayland);
+    stages.reset();   // its clients are gone: only the global is left
     views.clear();
     unmanaged.clear();
     m_popups.clear();
@@ -384,13 +396,23 @@ int Server::onSigchld(int, void*) {
 int Server::onTimer(void* data) {
     auto* s = static_cast<Server*>(data);
     // The clock in the top bar changes once a minute.
+    // The clock in the strip shows the seconds: one frame a second, idle or not.
     const std::time_t t = std::time(nullptr);
-    if (t / 60 != s->m_lastMinute) {
-        s->m_lastMinute = t / 60;
+    if (t != s->m_lastMinute) {
+        s->m_lastMinute = t;
         s->scheduleFrame();
     }
     wl_event_source_timer_update(s->m_timer, 1000);
     return 0;
+}
+
+void Server::toggleSound() {
+    const bool on = sfx->muted();
+    sfx->setMuted(!on);
+    state->soundOn = on;
+    state->save();
+    if (on) sfx->play(Sfx::Notify);
+    hud->toast(on ? "Ton an" : "Ton aus");
 }
 
 void Server::toggleFullscreen() {
@@ -555,12 +577,16 @@ View* Server::viewOfSurface(wlr_surface* surface) const {
 }
 
 void Server::viewMapped(View* view) {
+    sfx->play(Sfx::Materialize, view->parentView() ? 0.6f : 1.0f);
     desk->viewMapped(view);
     focus(view);
     scheduleFrame();
 }
 
 void Server::viewUnmapped(View* view) {
+    sfx->play(Sfx::Dematerialize, view->parentView() ? 0.6f : 1.0f);
+    gpu->makeCurrent();
+    desk->addGhost(view);   // its last picture folds away where it stood
     desk->viewUnmapped(view);
     if (m_pointerView == view) m_pointerView = nullptr;
     if (m_grabView == view) {
