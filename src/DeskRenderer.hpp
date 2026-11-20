@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include <fitzel/graphics/Mesh.hpp>
 #include <fitzel/graphics/RenderTarget.hpp>
@@ -35,6 +36,9 @@ public:
     // What the output really got (after present): the buffer handed to the
     // display, read back. For checking the import path, not for everyday use.
     bool saveOutputPng(const std::string& path);
+    // The pointer, drawn by raum itself where the screen has no cursor plane
+    // for it (Server::softwareCursor). On top of everything, HUD included.
+    void drawCursor(double x, double y);
 
 private:
     void updateCanvas(View* view);
@@ -52,6 +56,8 @@ private:
     fitzel::Shader m_skyShader, m_floorShader, m_windowShader, m_surfaceShader, m_glowShader;
     fitzel::Shader m_stageShader;
     fitzel::Mesh m_quad;   // unit quad, corners at 0..1
+    // xcursor images as textures, by the image they were made from.
+    std::unordered_map<const void*, fitzel::rhi::TextureHandle> m_cursorTextures;
 };
 
 } // namespace raum

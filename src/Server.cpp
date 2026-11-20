@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -42,6 +43,53 @@ void findNested(wlr_backend* b, void* data) {
 
 void findWl(wlr_backend* b, void* data) {
     if (wlr_backend_is_wl(b)) *static_cast<wlr_backend**>(data) = b;
+}
+
+// The device node of the first GPU from `vendor` ("0x10de" NVIDIA): its
+// /dev/dri/cardN (`render` false) or /dev/dri/renderDN (`render` true).
+std::string gpuNode(const char* vendor, bool render) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    std::vector<std::string> found;
+    for (const auto& e : fs::directory_iterator("/sys/class/drm", ec)) {
+        const std::string n = e.path().filename().string();
+        const bool isCard = n.rfind("card", 0) == 0 && n.find('-') == std::string::npos;
+        const bool isRender = n.rfind("renderD", 0) == 0;
+        if (render ? !isRender : !isCard) continue;
+        std::ifstream v(e.path() / "device" / "vendor");
+        std::string id;
+        v >> id;
+        if (id == vendor) found.push_back("/dev/dri/" + n);
+    }
+    std::sort(found.begin(), found.end());
+    return found.empty() ? std::string() : found.front();
+}
+
+// On a machine with an NVIDIA card raum uses that one and only that one: the
+// screen, raum's drawing and (through the dmabuf feedback) the programs'. With
+// a second GPU in the box wlroots would otherwise take whichever the kernel
+// numbered first -- this machine's iGPU on some boots -- and drive the NVIDIA
+// screen across both, with no hardware cursor. Nested, the host desktop
+// decides; RAUM_GPU=any leaves the choice to wlroots.
+void preferNvidia() {
+    const char* any = std::getenv("RAUM_GPU");
+    if (any && std::string(any) == "any") return;
+    if (std::getenv("WAYLAND_DISPLAY") || std::getenv("DISPLAY")) return;
+    const char* backends = std::getenv("WLR_BACKENDS");
+    const bool headless = backends && std::string(backends) == "headless";
+    if (headless) {
+        if (std::getenv("WLR_RENDER_DRM_DEVICE")) return;
+        const std::string node = gpuNode("0x10de", true);
+        if (!node.empty()) setenv("WLR_RENDER_DRM_DEVICE", node.c_str(), 1);
+        return;
+    }
+    if (std::getenv("WLR_DRM_DEVICES")) return;
+    const std::string card = gpuNode("0x10de", false);
+    if (card.empty()) return;
+    setenv("WLR_DRM_DEVICES", card.c_str(), 1);
+    setenv("GBM_BACKEND", "nvidia-drm", 0);
+    setenv("__GLX_VENDOR_LIBRARY_NAME", "nvidia", 0);
+    std::fprintf(stderr, "[raum] NVIDIA only: %s\n", card.c_str());
 }
 
 void findHeadless(wlr_backend* b, void* data) {
@@ -119,6 +167,7 @@ Server::Server(const Options& opts) : options(opts) {
     wlr_log_init(debug && *debug ? WLR_DEBUG : WLR_ERROR, nullptr);
     // raum draws through its own OpenGL context on the GLES renderer's EGL display.
     setenv("WLR_RENDERER", "gles2", 1);
+    preferNvidia();
 
     display = wl_display_create();
     loop = wl_display_get_event_loop(display);
@@ -220,7 +269,7 @@ Server::~Server() {
                                 &m_cursorMotion, &m_cursorMotionAbs, &m_cursorButton, &m_cursorAxis,
                                 &m_cursorFrame, &m_requestSetCursor, &m_requestSetSelection,
                                 &m_requestSetPrimarySelection, &m_cursorShapeRequest, &m_activate,
-                                &m_newXwaylandSurface, &m_xwaylandReady})
+                                &m_newXwaylandSurface, &m_xwaylandReady, &m_cursorSurfaceDestroy})
         l->disconnect();
     if (xwayland) wlr_xwayland_destroy(xwayland);
     stages.reset();   // its clients are gone: only the global is left
@@ -338,7 +387,12 @@ void Server::setupEnvironment() {
     if (xwayland) setenv("DISPLAY", xwayland->display_name, 1);
     else unsetenv("DISPLAY");
     setenv("XDG_SESSION_TYPE", "wayland", 1);
-    setenv("XDG_CURRENT_DESKTOP", "raum", 1);
+    // raum first, then GNOME: Chromium and Electron choose where they keep
+    // their secrets by this list, and for a desktop they do not know they keep
+    // them nowhere -- Claude Desktop, Chrome, VS Code could not read their own
+    // logins (the keyring is GNOME's, and it runs in raum's session too). The
+    // portals look for raum-portals.conf first and then take GNOME's.
+    setenv("XDG_CURRENT_DESKTOP", "raum:GNOME", 1);
     setenv("XDG_SESSION_DESKTOP", "raum", 1);
     setenv("GDK_BACKEND", "wayland,x11", 1);
     setenv("QT_QPA_PLATFORM", "wayland;xcb", 1);
@@ -655,6 +709,7 @@ void Server::onRequestSetCursor(void* data) {
     if (e->seat_client != seat->pointer_state.focused_client) return;
     if (m_grab == Grab::Move || m_grab == Grab::Resize || hud->wantsPointer()) return;
     wlr_cursor_set_surface(cursor, e->surface, e->hotspot_x, e->hotspot_y);
+    setCursorImage({}, e->surface, e->hotspot_x, e->hotspot_y);
     m_clientCursor = true;
 }
 
@@ -663,6 +718,7 @@ void Server::onCursorShape(void* data) {
     if (e->seat_client != seat->pointer_state.focused_client) return;
     if (m_grab == Grab::Move || m_grab == Grab::Resize || hud->wantsPointer()) return;
     wlr_cursor_set_xcursor(cursor, xcursor, wlr_cursor_shape_v1_name(e->shape));
+    setCursorImage(wlr_cursor_shape_v1_name(e->shape), nullptr, 0, 0);
     m_clientCursor = true;
 }
 
@@ -686,7 +742,32 @@ void Server::onActivate(void* data) {
 
 void Server::resetCursorImage() {
     wlr_cursor_set_xcursor(cursor, xcursor, "default");
+    setCursorImage("default", nullptr, 0, 0);
     m_clientCursor = false;
+}
+
+void Server::setCursorImage(const std::string& name, wlr_surface* surface, int hotX, int hotY) {
+    m_cursorSurfaceDestroy.disconnect();
+    cursorImage = CursorImage{name, surface, hotX, hotY};
+    if (surface) m_cursorSurfaceDestroy.connect(&surface->events.destroy, this, &Server::onCursorSurfaceDestroy);
+    scheduleFrame();
+}
+
+void Server::onCursorSurfaceDestroy(void*) {
+    m_cursorSurfaceDestroy.disconnect();
+    cursorImage.surface = nullptr;   // a client's cursor that went: none shown
+}
+
+bool Server::softwareCursor() const {
+    // A session of its own draws the cursor itself when the screen has no
+    // cursor plane for it (wlroots would leave that to the renderer, which in
+    // raum is not wlroots'). Nested, the host shows it; headless, nobody looks
+    // -- except a test that asks (RAUM_SOFTWARE_CURSOR=1).
+    static const bool forced = std::getenv("RAUM_SOFTWARE_CURSOR") != nullptr;
+    if (forced) return true;
+    if (!session) return false;
+    const Output* o = mainOutput();
+    return o && o->wlr->hardware_cursor == nullptr;
 }
 
 // --- Scripts (tests, demos) -------------------------------------------------------------------

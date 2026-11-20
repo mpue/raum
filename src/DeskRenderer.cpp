@@ -449,7 +449,10 @@ DeskRenderer::DeskRenderer(Server& server) : m_server(server) {
     m_quad = fitzel::Mesh::create(v, {0, 1, 2, 0, 2, 3});
 }
 
-DeskRenderer::~DeskRenderer() = default;
+DeskRenderer::~DeskRenderer() {
+    for (auto& [img, tex] : m_cursorTextures)
+        if (tex.valid()) m_server.gpu->device().destroy(tex);
+}
 
 // --- Canvases ---------------------------------------------------------------------
 
@@ -824,6 +827,74 @@ void DeskRenderer::render(int width, int height) {
     drawStage();
     drawWindows(false);
     drawGhosts();
+    dev.setRenderState(rhi::RenderState{});
+}
+
+void DeskRenderer::drawCursor(double x, double y) {
+    if (!m_scene || !m_server.softwareCursor()) return;
+    const Server::CursorImage& ci = m_server.cursorImage;
+    rhi::Device& dev = m_server.gpu->device();
+    rhi::TextureHandle tex;
+    int w = 0, h = 0, hx = 0, hy = 0;
+    bool swap = false, opaque = false;
+    if (ci.surface) {
+        // The client's own cursor surface.
+        SurfaceTextures& st = *m_server.surfaces;
+        const SurfaceTextures::Sampled sm = st.sampled(ci.surface);
+        if (!sm.texture.valid()) return;
+        st.waitReady(ci.surface);
+        tex = sm.texture;
+        w = ci.surface->current.width;
+        h = ci.surface->current.height;
+        hx = ci.hotX;
+        hy = ci.hotY;
+        swap = sm.swapRB;
+        opaque = sm.opaque;
+    } else if (!ci.name.empty()) {
+        wlr_xcursor* xc = wlr_xcursor_manager_get_xcursor(m_server.xcursor, ci.name.c_str(), 1.0f);
+        if (!xc) xc = wlr_xcursor_manager_get_xcursor(m_server.xcursor, "default", 1.0f);
+        if (!xc || xc->image_count == 0) return;
+        // An animated one (the busy cursor) runs on the clock.
+        unsigned frame = 0;
+        if (xc->image_count > 1 && xc->total_delay > 0) {
+            std::uint32_t t = static_cast<std::uint32_t>(m_server.desk->now() * 1000.0) % xc->total_delay;
+            while (frame + 1 < xc->image_count && t >= xc->images[frame]->delay) t -= xc->images[frame++]->delay;
+        }
+        wlr_xcursor_image* img = xc->images[frame];
+        auto it = m_cursorTextures.find(img);
+        if (it == m_cursorTextures.end()) {
+            rhi::TextureDesc d;
+            d.width = static_cast<int>(img->width);
+            d.height = static_cast<int>(img->height);
+            d.mipLevels = 1;
+            d.usage = rhi::UsageSampled;
+            // ARGB8888, premultiplied: B, G, R, A in memory.
+            it = m_cursorTextures.emplace(img, dev.createTexture(d, img->buffer, rhi::Format::RGBA8)).first;
+        }
+        tex = it->second;
+        w = static_cast<int>(img->width);
+        h = static_cast<int>(img->height);
+        hx = static_cast<int>(img->hotspot_x);
+        hy = static_cast<int>(img->hotspot_y);
+        swap = true;
+    } else {
+        return;   // hidden by the client
+    }
+    m_scene->bind();
+    dev.setRenderState(blendPremultiplied(false, false));
+    m_surfaceShader.bind();
+    m_surfaceShader.setVec2("uCanvas", glm::vec2(m_w, m_h));
+    // The scene is the right way up for OpenGL (y up); the texture's first row
+    // is the top of the image.
+    const float x0 = static_cast<float>(std::floor(x)) - hx;
+    const float yTop = static_cast<float>(std::floor(y)) - hy;
+    m_surfaceShader.setVec4("uRect", glm::vec4(x0, m_h - yTop - h, w, h));
+    m_surfaceShader.setVec4("uSrc", glm::vec4(0.0f, 1.0f, 1.0f, 0.0f));
+    m_surfaceShader.setInt("uSwapRB", swap ? 1 : 0);
+    m_surfaceShader.setInt("uOpaque", opaque ? 1 : 0);
+    m_surfaceShader.setInt("uTex", 0);
+    dev.bindTexture(0, tex);
+    m_quad.draw();
     dev.setRenderState(rhi::RenderState{});
 }
 

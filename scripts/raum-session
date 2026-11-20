@@ -4,9 +4,12 @@
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/raum"
 mkdir -p "$LOG_DIR"
 [ -f "$LOG_DIR/session.log" ] && mv -f "$LOG_DIR/session.log" "$LOG_DIR/session.log.old"
-export XDG_CURRENT_DESKTOP=raum
+# raum first, then GNOME: Chromium/Electron pick their keyring by this list
+# and keep logins nowhere for a desktop they do not know.
+export XDG_CURRENT_DESKTOP=raum:GNOME
 export XDG_SESSION_DESKTOP=raum
-# The NVIDIA driver wants these for GBM-backed compositors.
+# raum itself picks the NVIDIA card and only that one (WLR_DRM_DEVICES); the
+# driver wants these for GBM-backed compositors and their clients.
 if [ -e /proc/driver/nvidia/version ]; then
     export GBM_BACKEND="${GBM_BACKEND:-nvidia-drm}"
     export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-nvidia}"

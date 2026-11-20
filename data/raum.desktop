@@ -4,4 +4,4 @@ Comment=Ein 3D-Desktop: Fenster im Raum, Projekte als Räume
 Exec=raum-session
 TryExec=raum-session
 Type=Application
-DesktopNames=raum
+DesktopNames=raum;GNOME

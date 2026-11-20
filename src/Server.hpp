@@ -138,6 +138,18 @@ public:
     bool superHeld() const;
     void resetCursorImage();
 
+    // What the pointer looks like: an xcursor by name, or a client's surface
+    // with its hotspot (null surface and empty name: hidden). Kept for the
+    // cursor raum draws itself (softwareCursor).
+    struct CursorImage {
+        std::string name = "default";
+        wlr_surface* surface = nullptr;
+        int hotX = 0, hotY = 0;
+    };
+    CursorImage cursorImage;
+    void setCursorImage(const std::string& name, wlr_surface* surface, int hotX, int hotY);
+    bool softwareCursor() const;
+
 private:
     void onNewOutput(void*);
     void onNewInput(void*);
@@ -156,6 +168,7 @@ private:
     void onActivate(void*);
     void onNewXwaylandSurface(void*);
     void onXwaylandReady(void*);
+    void onCursorSurfaceDestroy(void*);
     static int onSigchld(int signal, void* data);
     static int onTimer(void* data);
 
@@ -212,6 +225,7 @@ private:
     Listener<Server> m_requestSetCursor, m_requestSetSelection, m_requestSetPrimarySelection;
     Listener<Server> m_cursorShapeRequest, m_activate;
     Listener<Server> m_newXwaylandSurface, m_xwaylandReady;
+    Listener<Server> m_cursorSurfaceDestroy;
 
     friend class Keyboard;
 };

@@ -115,11 +115,23 @@ Danach abmelden und im Anmeldebildschirm über das Zahnrad „raum“ wählen.
 raum übernimmt den Bildschirm dann über DRM/KMS und libinput. Das Log liegt
 in `~/.local/state/raum/session.log`.
 
-Dieser Weg ist gebaut, aber noch **nicht auf diesem Rechner ausprobiert**.
-Verschachtelt läuft derselbe Code mit derselben Zeichnung, nur hinter einem
-anderen wlroots-Backend. Mit zwei Grafikkarten (hier RTX 4090 und
-Raphael-iGPU) lässt sich die Karte über `WLR_DRM_DEVICES=/dev/dri/cardN`
-festlegen. Strg+Alt+F1…F12 wechselt die Konsole.
+raum nimmt in der Sitzung **nur die NVIDIA-Karte**: für den Bildschirm, fürs
+Zeichnen und, über den dmabuf-Hinweis an die Programme, auch für die Programme.
+Sonst nähme wlroots die Karte, die der Kernel zuerst nummeriert hat. Auf diesem
+Rechner ist das je nach Start die iGPU, und der Monitor an der 4090 würde dann
+über beide Karten angesteuert, ohne Hardware-Mauszeiger. Mit `RAUM_GPU=any`
+entscheidet wlroots, mit `WLR_DRM_DEVICES=/dev/dri/cardN` legst du selbst eine
+Karte fest. Findet sich trotzdem keine Cursor-Ebene, zeichnet raum den
+Mauszeiger selbst. Strg+Alt+F1…F12 wechselt die Konsole.
+
+Programme sehen `XDG_CURRENT_DESKTOP=raum:GNOME`. Das GNOME darin ist nötig:
+Chromium und Electron (Chrome, VS Code, Claude Desktop) suchen ihren
+Schlüsselbund nach dieser Liste aus. Bei einem Desktop, den sie nicht kennen,
+nehmen sie keinen und können ihre gespeicherten Anmeldungen nicht lesen. Der
+GNOME-Schlüsselbund läuft auch in der raum-Sitzung.
+
+Nach einer Änderung an raum `scripts/install-session.sh` erneut ausführen,
+denn die Sitzung startet die Kopie in `/usr/local/bin`.
 
 ## Bedienung
 
@@ -240,7 +252,8 @@ ab. Die Skriptsprache:
 
 `raum --script DATEI` geht auch verschachtelt. Zur Fehlersuche gibt es
 `RAUM_DEBUG=1` (wlroots-Log), `RAUM_DEBUG_CANVAS=1` (Commits und Fensterbilder),
-`RAUM_DEBUG_HUD=1` (Tasten an die Oberfläche), `RAUM_DEBUG_STAGE=1` (die
+`RAUM_DEBUG_HUD=1` (Tasten an die Oberfläche), `RAUM_SOFTWARE_CURSOR=1` (raum
+zeichnet den Mauszeiger selbst, auch headless), `RAUM_DEBUG_STAGE=1` (die
 Bühne: Wechsel zwischen Fenster und Diorama, jede Kamera, jedes Bild) und
 `RAUM_NO_INHIBIT=1` (verschachtelt nicht um die Tastenkürzel bitten).
 

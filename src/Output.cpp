@@ -103,6 +103,7 @@ void Output::onFrame(void*) {
     s.deskRenderer->render(w, h);
     s.deskRenderer->bindScene();
     s.hud->render(w, h, dt);
+    s.deskRenderer->drawCursor(s.cursor->x, s.cursor->y);
     if (!s.pendingScreenshot.empty()) {
         s.deskRenderer->savePng(s.pendingScreenshot);
         s.pendingScreenshot.clear();
