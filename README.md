@@ -2,7 +2,7 @@
 
 Ein 3D-Desktop für Linux: ein eigener Wayland-Compositor auf
 [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots), dessen Fenster die
-[fitzel](../fitzel)-Engine in einen Raum zeichnet. Echte Programme (GTK, Qt,
+[fitzel](https://github.com/mpue/fitzel)-Engine in einen Raum zeichnet. Echte Programme (GTK, Qt,
 Firefox, Chrome, foot, über Xwayland auch X11-Programme) laufen darin und
 werden als Texturen im Raum angeordnet.
 
@@ -202,7 +202,8 @@ Verbindung läuft wie die Puffer, passen Kamera und Bild immer zusammen.
 ## Bauen
 
 Voraussetzungen: `sudo apt install libwlroots-0.19-dev foot`, außerdem ein
-fitzel-Quellbaum unter `~/Documents/devel/fitzel`, der einmal mit seinem
+[fitzel](https://github.com/mpue/fitzel)-Quellbaum unter
+`~/Documents/devel/fitzel` (sonst `-DFITZEL_DIR=...`), der einmal mit seinem
 `build/linux` gebaut wurde. raum baut die Engine als Unterprojekt und nimmt
 die Quellen der Abhängigkeiten aus `fitzel/build/linux/_deps`, lädt also
 nichts neu herunter.
