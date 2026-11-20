@@ -95,7 +95,12 @@ des Fensters.
   Erlaube es, sonst landet Super bei GNOME (Übersicht) und nicht bei raum.
 - Programme, die in raum gestartet werden, bekommen einen eigenen D-Bus. Sonst
   öffneten Programme mit nur einer Instanz (Nautilus, der Texteditor …) ihr
-  Fenster drüben bei GNOME. `--shared-bus` schaltet das ab.
+  Fenster drüben bei GNOME. `--shared-bus` schaltet das ab. Die Portale
+  startet dieser Bus nicht, sie bleiben bei GNOME: Ein zweites
+  Dokument-Portal hängte `/run/user/$UID/doc` aus, und danach startete auf dem
+  ganzen Desktop kein Flatpak mehr (`bwrap: Can't find source path
+  …/doc/by-app/…`). Abhilfe, falls es doch passiert:
+  `systemctl --user restart xdg-document-portal`.
 - Ein Browser, der in GNOME schon läuft, öffnet sein neues Fenster trotzdem
   dort, weil er sich über sein Profil findet. Zum Testen also einen zweiten
   Browser nehmen oder den laufenden vorher schließen.
@@ -129,6 +134,34 @@ Chromium und Electron (Chrome, VS Code, Claude Desktop) suchen ihren
 Schlüsselbund nach dieser Liste aus. Bei einem Desktop, den sie nicht kennen,
 nehmen sie keinen und können ihre gespeicherten Anmeldungen nicht lesen. Der
 GNOME-Schlüsselbund läuft auch in der raum-Sitzung.
+
+Drei Dinge braucht die Sitzung außerdem, und `install-session.sh` legt alle an:
+
+- `~/.config/systemd/user/raum-session.target` bindet die
+  `graphical-session.target`. Auf sie warten die Portal-Dienste. Ohne sie lief
+  `xdg-desktop-portal` in Zeitüberschreitungen, und jedes GTK- oder
+  Electron-Programm startete 25 s später oder blieb leer.
+- `~/.config/systemd/user/raum-session-shutdown.target` beendet beim Abmelden
+  die `graphical-session.target`, so wie GNOME es selbst macht. Bliebe sie
+  stehen, ließe GNOME die nächste Anmeldung nicht zu („A graphical session is
+  already running!“). raum startet das Ziel beim Beenden selbst, auch wenn
+  GDM es mit einem Signal beendet, und `raum-session` startet es danach noch
+  einmal.
+- `~/.config/xdg-desktop-portal/raum-portals.conf` legt fest, dass ein Desktop
+  namens raum die GTK-Portale und für Geheimnisse den Schlüsselbund nimmt.
+  GNOMEs eigene Portale brauchen gnome-shell.
+
+WebKitGTK-Programme (Tauri-Apps wie BlackBoard, GNOME Web) bleiben auf der
+NVIDIA über Wayland leer: Die Seite rendert, aber nichts erscheint, egal mit
+welcher `WEBKIT_*`-Einstellung. Über Xwayland laufen sie, auf derselben Karte.
+Deshalb startet raum Programme, die WebKitGTK verwenden, auf der NVIDIA aus
+dem Menü mit `GDK_BACKEND=x11`. Aus einem Terminal gestartet gilt das nicht;
+dort `GDK_BACKEND=x11 programm`.
+
+X11-Programme (alles über Xwayland, auch BlackBoard so gestartet) schicken
+ihren Mauszeiger als eigenes Bild. wlroots legt so ein Bild nur aus seiner
+eigenen Textur auf die Cursor-Ebene, und die gibt es in raum nicht. Deshalb
+zeichnet raum diese Zeiger selbst, die übrigen bleiben auf der Cursor-Ebene.
 
 Nach einer Änderung an raum `scripts/install-session.sh` erneut ausführen,
 denn die Sitzung startet die Kopie in `/usr/local/bin`.

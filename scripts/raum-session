@@ -14,4 +14,16 @@ if [ -e /proc/driver/nvidia/version ]; then
     export GBM_BACKEND="${GBM_BACKEND:-nvidia-drm}"
     export __GLX_VENDOR_LIBRARY_NAME="${__GLX_VENDOR_LIBRARY_NAME:-nvidia}"
 fi
-exec raum --shared-bus "$@" >"$LOG_DIR/session.log" 2>&1
+# raum started raum-session.target once its display was up. When it ends, so
+# does graphical-session.target (raum-session-shutdown.target conflicts with
+# it; raum starts that itself too) -- left running, GNOME refuses the next
+# login -- and the user's services forget raum's display again.
+end_session() {
+    systemctl --user start --job-mode=replace-irreversibly raum-session-shutdown.target 2>/dev/null
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP 2>/dev/null
+}
+trap 'end_session; exit 143' TERM HUP INT
+raum --shared-bus "$@" >"$LOG_DIR/session.log" 2>&1
+status=$?
+end_session
+exit $status

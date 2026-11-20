@@ -1,6 +1,7 @@
 // raum -- a 3D desktop. A Wayland compositor on wlroots whose windows are
 // drawn into a room by the fitzel engine.
 
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -63,6 +64,13 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    // Stop signals are read on raum's event loop (Server::onStopSignal). Blocked
+    // before any thread exists (the GL driver starts some), so that none of
+    // them takes the default death and skips the cleanup.
+    sigset_t stop;
+    sigemptyset(&stop);
+    for (int sig : {SIGTERM, SIGINT, SIGHUP}) sigaddset(&stop, sig);
+    pthread_sigmask(SIG_BLOCK, &stop, nullptr);
     raum::Server server(opts);
     if (!server.start()) return 1;
     server.run();

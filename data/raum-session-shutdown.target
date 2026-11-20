@@ -1,0 +1,12 @@
+# Ends raum's session for systemd the way GNOME's logout does: it conflicts
+# with graphical-session.target, so that one stops even when other units still
+# want it. Left running, GNOME refuses the next login ("A graphical session is
+# already running!"). raum starts it when it quits; scripts/raum-session again
+# once raum is gone.
+[Unit]
+Description=Shutdown running raum session
+Documentation=https://github.com/mpue/raum
+DefaultDependencies=no
+StopWhenUnneeded=true
+Conflicts=graphical-session.target graphical-session-pre.target raum-session.target
+After=graphical-session.target graphical-session-pre.target raum-session.target

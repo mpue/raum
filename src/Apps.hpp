@@ -22,6 +22,7 @@ struct App {
     bool terminal = false;
     std::shared_ptr<fitzel::Texture> texture;   // loaded on first use
     bool textureTried = false;
+    int  webkit = -1;          // links WebKitGTK: -1 not looked yet, 0 no, 1 yes
 };
 
 // The installed programs: every .desktop file under the XDG data directories
@@ -37,8 +38,9 @@ public:
     std::vector<int> search(const std::string& query) const;
     // The icon (a texture on the current device), or null when there is none.
     fitzel::Texture* icon(App& app);
-    // The command to start it (in a terminal when it wants one).
-    std::string command(const App& app) const;
+    // The command to start it (in a terminal when it wants one). `x11WebKit`:
+    // a WebKitGTK program goes through Xwayland (see Apps.cpp).
+    std::string command(App& app, bool x11WebKit = false);
     std::string terminal() const;
 
 private:

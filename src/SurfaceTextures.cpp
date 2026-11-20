@@ -184,9 +184,13 @@ void SurfaceRecord::uploadShm(wlr_buffer* buffer) {
     if (full) {
         upload(0, 0, w, h);
     } else {
+        // surface->buffer_damage, not current.buffer_damage: that one holds
+        // only what came through damage_buffer, and clients that damage in
+        // surface coordinates (Chromium drawing in software: Claude Desktop
+        // without GPU) would keep their first picture forever.
         int n = 0;
         const pixman_box32_t* rects =
-            pixman_region32_rectangles(&surface->current.buffer_damage, &n);
+            pixman_region32_rectangles(&surface->buffer_damage, &n);
         for (int i = 0; i < n; ++i) {
             const int x0 = std::max(0, rects[i].x1), y0 = std::max(0, rects[i].y1);
             const int x1 = std::min(w, rects[i].x2), y1 = std::min(h, rects[i].y2);

@@ -1,0 +1,11 @@
+# raum's session as systemd sees it: it binds graphical-session.target, which
+# the portal services and other session units wait for -- without it
+# xdg-desktop-portal ran into timeouts and every GTK or Electron program
+# started 25 s late. raum starts it once its display is up and stops it again
+# when it ends (scripts/raum-session).
+[Unit]
+Description=raum session
+Documentation=https://github.com/mpue/raum
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target

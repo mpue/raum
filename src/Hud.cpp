@@ -357,7 +357,7 @@ void Hud::close() {
 void Hud::launch(int index, int room) {
     Apps& apps = *m_server.apps;
     if (index < 0 || index >= static_cast<int>(apps.all().size())) return;
-    const App& app = apps.all()[static_cast<std::size_t>(index)];
+    App& app = const_cast<App&>(apps.all()[static_cast<std::size_t>(index)]);
     Desk& desk = *m_server.desk;
     if (room < 0 || room >= static_cast<int>(desk.rooms.size())) room = desk.current;
     if (room != desk.current) desk.goToRoom(room);
@@ -367,7 +367,7 @@ void Hud::launch(int index, int room) {
     recent.insert(recent.begin(), app.id);
     if (recent.size() > 8) recent.resize(8);
     m_server.state->save();
-    m_server.spawn(apps.command(app));
+    m_server.spawn(apps.command(app, m_server.onNvidia()));
     toast(app.name + " startet");
 }
 

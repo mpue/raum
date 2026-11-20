@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include <unistd.h>
 
@@ -236,12 +237,64 @@ std::string Apps::terminal() const {
     return "xterm";
 }
 
-std::string Apps::command(const App& app) const {
-    if (!app.terminal) return app.exec;
-    const std::string t = terminal();
-    if (t == "foot" || t == "alacritty" || t == "kitty") return t + " " + app.exec;
-    if (t == "ptyxis" || t == "kgx" || t == "gnome-terminal") return t + " -- " + app.exec;
-    return t + " -e " + app.exec;
+namespace {
+
+// The program a desktop entry's Exec starts: its first word that is not
+// `env` or a VAR=value, found on PATH.
+std::string executableOf(const std::string& exec) {
+    std::istringstream in(exec);
+    for (std::string w; in >> w;) {
+        if (!w.empty() && (w.front() == '"' || w.front() == '\'')) w = w.substr(1);
+        if (!w.empty() && (w.back() == '"' || w.back() == '\'')) w.pop_back();
+        if (w == "env" || w.find('=') != std::string::npos) continue;
+        if (w.find('/') != std::string::npos) return w;
+        const char* path = std::getenv("PATH");
+        std::stringstream ss(path ? path : "/usr/bin:/bin");
+        for (std::string d; std::getline(ss, d, ':');)
+            if (access((d + "/" + w).c_str(), X_OK) == 0) return d + "/" + w;
+        return {};
+    }
+    return {};
+}
+
+// Whether a binary links WebKitGTK: the library's name is in its dynamic
+// string table. Read in pieces; a program is tens of megabytes at most.
+bool linksWebKit(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    static const std::string needles[] = {"libwebkit2gtk-4.", "libwebkitgtk-6."};
+    std::string carry;
+    std::vector<char> buf(1 << 20);
+    while (f) {
+        f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        const std::size_t n = static_cast<std::size_t>(f.gcount());
+        if (n == 0) break;
+        std::string chunk = carry + std::string(buf.data(), n);
+        for (const std::string& k : needles)
+            if (chunk.find(k) != std::string::npos) return true;
+        carry = chunk.substr(chunk.size() > 32 ? chunk.size() - 32 : 0);
+    }
+    return false;
+}
+
+} // namespace
+
+std::string Apps::command(App& app, bool x11WebKit) {
+    std::string cmd = app.exec;
+    if (app.terminal) {
+        const std::string t = terminal();
+        if (t == "foot" || t == "alacritty" || t == "kitty") cmd = t + " " + app.exec;
+        else if (t == "ptyxis" || t == "kgx" || t == "gnome-terminal") cmd = t + " -- " + app.exec;
+        else cmd = t + " -e " + app.exec;
+    }
+    // WebKitGTK on the NVIDIA driver draws nothing through Wayland in raum (the
+    // page renders, but the hand-over to the window shows blank -- every
+    // WEBKIT_* switch tried); through Xwayland it shows, on the same card.
+    if (x11WebKit && !app.terminal) {
+        if (app.webkit < 0) app.webkit = linksWebKit(executableOf(app.exec)) ? 1 : 0;
+        if (app.webkit == 1) cmd = "env GDK_BACKEND=x11 " + cmd;
+    }
+    return cmd;
 }
 
 } // namespace raum

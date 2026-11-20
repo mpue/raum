@@ -149,6 +149,9 @@ public:
     CursorImage cursorImage;
     void setCursorImage(const std::string& name, wlr_surface* surface, int hotX, int hotY);
     bool softwareCursor() const;
+    // raum draws on the NVIDIA card (and so do the programs, through the
+    // dmabuf feedback).
+    bool onNvidia() const;
 
 private:
     void onNewOutput(void*);
@@ -169,7 +172,9 @@ private:
     void onNewXwaylandSurface(void*);
     void onXwaylandReady(void*);
     void onCursorSurfaceDestroy(void*);
+    void onCursorSurfaceCommit(void*);
     static int onSigchld(int signal, void* data);
+    static int onStopSignal(int signal, void* data);
     static int onTimer(void* data);
 
     bool handleBinding(xkb_keysym_t sym, std::uint32_t mods);
@@ -188,6 +193,7 @@ private:
     wlr_xdg_activation_v1* m_activation = nullptr;
     wlr_cursor_shape_manager_v1* m_cursorShape = nullptr;
     wl_event_source* m_sigchld = nullptr;
+    std::vector<wl_event_source*> m_stopSignals;
     wl_event_source* m_timer = nullptr;
     View* m_focused = nullptr;
     pid_t m_busPid = -1;
@@ -225,7 +231,7 @@ private:
     Listener<Server> m_requestSetCursor, m_requestSetSelection, m_requestSetPrimarySelection;
     Listener<Server> m_cursorShapeRequest, m_activate;
     Listener<Server> m_newXwaylandSurface, m_xwaylandReady;
-    Listener<Server> m_cursorSurfaceDestroy;
+    Listener<Server> m_cursorSurfaceDestroy, m_cursorSurfaceCommit;
 
     friend class Keyboard;
 };

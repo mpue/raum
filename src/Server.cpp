@@ -195,7 +195,7 @@ Server::Server(const Options& opts) : options(opts) {
     if (!gpu->ok()) return;
     // Explicit sync for clients that render on the GPU (NVIDIA's driver has
     // no implicit sync): raum waits for their fences itself (SurfaceTextures).
-    if (renderer->features.timeline) {
+    if (renderer->features.timeline && !std::getenv("RAUM_NO_EXPLICIT_SYNC")) {
         const int fd = wlr_renderer_get_drm_fd(renderer);
         if (fd >= 0 && wlr_linux_drm_syncobj_manager_v1_create(display, 1, fd))
             std::fprintf(stderr, "[raum] explicit sync on\n");
@@ -262,6 +262,14 @@ Server::Server(const Options& opts) : options(opts) {
 
 Server::~Server() {
     if (m_busPid > 0) kill(m_busPid, SIGTERM);
+    // A session of its own ends graphical-session.target with it (see
+    // data/raum-session-shutdown.target); scripts/raum-session does it again,
+    // in case raum did not get this far.
+    if (session) {
+        [[maybe_unused]] const int rc =
+            std::system("systemctl --user start --no-block --job-mode=replace-irreversibly "
+                        "raum-session-shutdown.target 2>/dev/null");
+    }
     if (!display) return;
     wl_display_destroy_clients(display);
     // wlroots asserts that nobody still listens to what it destroys.
@@ -269,7 +277,8 @@ Server::~Server() {
                                 &m_cursorMotion, &m_cursorMotionAbs, &m_cursorButton, &m_cursorAxis,
                                 &m_cursorFrame, &m_requestSetCursor, &m_requestSetSelection,
                                 &m_requestSetPrimarySelection, &m_cursorShapeRequest, &m_activate,
-                                &m_newXwaylandSurface, &m_xwaylandReady, &m_cursorSurfaceDestroy})
+                                &m_newXwaylandSurface, &m_xwaylandReady, &m_cursorSurfaceDestroy,
+                                &m_cursorSurfaceCommit})
         l->disconnect();
     if (xwayland) wlr_xwayland_destroy(xwayland);
     stages.reset();   // its clients are gone: only the global is left
@@ -346,10 +355,17 @@ bool Server::start() {
     if (session) {
         // A session of its own: the user's services (portals, keyring, systemd
         // units) have to learn which display is theirs now.
+        // Then the session target: it binds graphical-session.target, which the
+        // portals wait for (data/raum-session.target).
         spawn("dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY "
-              "XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP 2>/dev/null");
+              "XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP 2>/dev/null; "
+              "systemctl --user start raum-session.target 2>/dev/null");
     }
     m_sigchld = wl_event_loop_add_signal(loop, SIGCHLD, &Server::onSigchld, this);
+    // Asked to stop (GDM at logout, Ctrl+C nested): end like Quit does, so the
+    // private bus goes and a session's targets are stopped.
+    for (int sig : {SIGTERM, SIGINT, SIGHUP})
+        m_stopSignals.push_back(wl_event_loop_add_signal(loop, sig, &Server::onStopSignal, this));
     m_timer = wl_event_loop_add_timer(loop, &Server::onTimer, this);
     wl_event_source_timer_update(m_timer, 1000);
     if (!options.script.empty()) loadScript(options.script);
@@ -407,7 +423,38 @@ void Server::startPrivateBus() {
     // keeps a single instance (most GNOME apps): starting one here would only
     // open a window over there. A bus of raum's own keeps them here. The
     // portals stay with the host, so GTK is told not to wait for them.
-    FILE* p = popen("dbus-daemon --session --fork --print-address=1 --print-pid=1 2>/dev/null", "r");
+    //
+    // And they must not be started on this bus either: a second
+    // xdg-document-portal takes over $XDG_RUNTIME_DIR/doc and leaves it
+    // unmounted when it goes, and then no Flatpak starts on the host ("bwrap:
+    // Can't find source path .../doc/by-app/..."). A service directory listed
+    // before the standard ones wins, so the portals get one that fails at once.
+    namespace fs = std::filesystem;
+    const char* runtime = std::getenv("XDG_RUNTIME_DIR");
+    const fs::path dir = fs::path(runtime ? runtime : "/tmp") / "raum-bus";
+    std::error_code ec;
+    fs::create_directories(dir / "services", ec);
+    for (const char* name : {"org.freedesktop.portal.Documents", "org.freedesktop.portal.Desktop",
+                             "org.freedesktop.portal.Flatpak", "org.freedesktop.impl.portal.PermissionStore",
+                             "org.freedesktop.impl.portal.desktop.gtk",
+                             "org.freedesktop.impl.portal.desktop.gnome"}) {
+        std::ofstream(dir / "services" / (std::string(name) + ".service"))
+            << "[D-BUS Service]\nName=" << name << "\nExec=/bin/false\n";
+    }
+    std::ofstream(dir / "bus.conf")
+        << "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
+           " \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
+           "<busconfig>\n  <servicedir>" << (dir / "services").string() << "</servicedir>\n"
+           "  <include>/usr/share/dbus-1/session.conf</include>\n</busconfig>\n";
+    const std::string cmd = "dbus-daemon --config-file='" + (dir / "bus.conf").string() +
+                            "' --fork --print-address=1 --print-pid=1 2>/dev/null";
+    // The bus is killed with SIGTERM when raum ends: it must not inherit
+    // raum's blocked stop signals (main.cpp).
+    sigset_t none, old;
+    sigemptyset(&none);
+    pthread_sigmask(SIG_SETMASK, &none, &old);
+    FILE* p = popen(cmd.c_str(), "r");
+    pthread_sigmask(SIG_SETMASK, &old, nullptr);
     if (!p) return;
     char addr[512] = {}, pid[32] = {};
     if (fgets(addr, sizeof(addr), p) && fgets(pid, sizeof(pid), p)) {
@@ -440,6 +487,12 @@ void Server::spawn(const std::string& command) {
         _exit(127);
     }
     std::fprintf(stderr, "[raum] started: %s\n", command.c_str());
+}
+
+int Server::onStopSignal(int signal, void* data) {
+    std::fprintf(stderr, "[raum] signal %d: quitting\n", signal);
+    static_cast<Server*>(data)->quit();
+    return 0;
 }
 
 int Server::onSigchld(int, void*) {
@@ -748,14 +801,29 @@ void Server::resetCursorImage() {
 
 void Server::setCursorImage(const std::string& name, wlr_surface* surface, int hotX, int hotY) {
     m_cursorSurfaceDestroy.disconnect();
+    m_cursorSurfaceCommit.disconnect();
     cursorImage = CursorImage{name, surface, hotX, hotY};
-    if (surface) m_cursorSurfaceDestroy.connect(&surface->events.destroy, this, &Server::onCursorSurfaceDestroy);
+    if (surface) {
+        m_cursorSurfaceDestroy.connect(&surface->events.destroy, this, &Server::onCursorSurfaceDestroy);
+        m_cursorSurfaceCommit.connect(&surface->events.commit, this, &Server::onCursorSurfaceCommit);
+    }
     scheduleFrame();
 }
 
 void Server::onCursorSurfaceDestroy(void*) {
     m_cursorSurfaceDestroy.disconnect();
+    m_cursorSurfaceCommit.disconnect();
     cursorImage.surface = nullptr;   // a client's cursor that went: none shown
+}
+
+void Server::onCursorSurfaceCommit(void*) {
+    if (softwareCursor()) scheduleFrame();   // a new picture (Xwayland's busy watch)
+}
+
+bool Server::onNvidia() const {
+    if (!gpu || !gpu->ok()) return false;
+    const char* v = gpu->device().caps().vendor;
+    return v && std::string(v).find("NVIDIA") != std::string::npos;
 }
 
 bool Server::softwareCursor() const {
@@ -765,6 +833,11 @@ bool Server::softwareCursor() const {
     // -- except a test that asks (RAUM_SOFTWARE_CURSOR=1).
     static const bool forced = std::getenv("RAUM_SOFTWARE_CURSOR") != nullptr;
     if (forced) return true;
+    if (!session && !nested) return false;
+    // A client's own cursor surface (Xwayland's, for every X11 program): wlroots
+    // puts a surface on the cursor plane only from its own texture of it, which
+    // raum's surfaces don't have -- the plane stays empty, so raum draws it.
+    if (cursorImage.surface) return true;
     if (!session) return false;
     const Output* o = mainOutput();
     return o && o->wlr->hardware_cursor == nullptr;
